@@ -1,3 +1,5 @@
+### Autor: Marek Błaszczak ###
+
 #install.packages("shiny")
 library(shiny)
 #install.packages("shinydashboard")
@@ -173,7 +175,7 @@ server<-function(input, output, session){
   info<-"Author: Marek Błaszczak"
   output$about<-renderText(paste(
     info, "Dataset from https://www.kaggle.com/ronitf/heart-disease-uci",
-    "Technologies: R 3.5.3 (shiny, shinydashboard, DT, ggplot2",
+    "Technologies: R 3.5.3 (shiny, shinydashboard, DT, ggplot2)",
     sep = "\n"
   ))
   
@@ -299,6 +301,119 @@ server<-function(input, output, session){
                            value =min(as.numeric(as.character(dane$thal)))
         )
         
+        #pomieszanie danych
+        set.seed(667)
+        dane<-dane[sample(nrow(dane)),]
+        
+        #info o zaleznosci zmiennych
+        
+        text<-"The following shows how significant the individual variables 
+        have on the variable target."
+        
+        output$info_istotnosc<-renderText(text)
+        
+        ### sprawdzenie korelacji metoda Spearmana ###
+        
+        dane1<-dummyVars(target~.,dane)
+        dane_m<-predict(dane1,newdata=dane)
+        y<-as.numeric(as.character(dane$target))
+        s<-data.frame(dane_m)
+        s$target<-y
+        str(s)
+        
+        #install.packages("reshape2")
+        library(reshape2)
+        
+        c<-abs(cor(s))
+        
+        melted_cormat <- melt(c)
+        wykres_kor<-ggplot(melted_cormat)+
+          geom_tile(aes(x=Var1, y=Var2, fill=value), color = "white")+
+          scale_fill_gradient2(low = "white", high = "red",
+                               limit = c(0,1), space = "Lab",
+                               name="Pearson\nCorrelation") +
+          labs(x="",y="")+
+          theme_minimal()+
+          theme(axis.text.x = element_text(angle = 90, vjust = 1,
+                                           size = 9, hjust = 1))+
+          coord_fixed()
+        
+        output$wykres_kor<-renderPlot(wykres_kor)
+        
+        ### sposob nr2 korelacja - tabelka ###
+        
+        kor_num<- t(data.frame(abs(cor(s, s$target))))
+        rownames(kor_num)<-"coefficient"
+        
+        output$tabela_kor<-renderDT(kor_num, options=list(scrollX=T))
+        
+        ### sposob 3 test chi kwadrat dla danych kategorycznych
+        # bez zmiany na numeryczne
+        
+        #poazanie zmiennych jakosciowych
+        sapply(dane, function(x) is.factor(x))
+        i<-as.vector(sapply(dane, function(x) is.factor(x)))
+        i<-colnames(dane[,which(i==T)])
+        i<-i[-which(i=="target")]
+        i
+        
+        #zastosowanie testu chi-kwadrat dla kazdej zmiennej celem
+        #obliczenia jej wplywu na zmienna target
+        
+        chi1<-chisq.test(table(dane[,c("sex","target")]))$p.value
+        chi2<-chisq.test(table(dane[,c("cp","target")]))$p.value
+        chi3<-chisq.test(table(dane[,c("fbs","target")]))$p.value
+        chi4<-chisq.test(table(dane[,c("restecg","target")]))$p.value
+        chi5<-chisq.test(table(dane[,c("exang","target")]))$p.value
+        chi6<-chisq.test(table(dane[,c("slope","target")]))$p.value
+        chi7<-chisq.test(table(dane[,c("ca","target")]))$p.value
+        chi8<-chisq.test(table(dane[,c("thal","target")]))$p.value
+        
+        wek_chi<-c(chi1,chi2,chi3,chi4,chi5,chi6,chi7,chi8)
+        wek_chi
+        
+        chi_table<-data.frame("p.value"=wek_chi)
+        rownames(chi_table)<-i
+        chi_table<-t(chi_table)
+        chi_table
+        
+        output$tabela_chi<-renderDT(chi_table, options = list(scrollX=T))
+        
+        
+        ### sprawdzenie istotnosci zmiennych modelem LVQ ###
+        control_lvp <- trainControl(method="repeatedcv", number=10, repeats=3)
+        
+        ist_lvq <- train(target~., data=dane, 
+                         method="lvq", preProcess="scale",
+                         trControl=control_lvp)
+        
+        importance_lvq <- varImp(ist_lvq, scale=FALSE)
+        
+        output$wykres_lvq<-renderPlot(plot(importance_lvq))
+        
+        ### sprawdzenie istotnosci zmiennych modelem drzewa decyzyjnego ###
+        
+        ist_tree<-train(target~., data=dane,
+                        method = "ctree2", trControl = control_lvp)
+        
+        importance_tree<-varImp(ist_tree, scale=F)
+        
+        output$wykres_ctree2<-renderPlot(plot(importance_tree))
+        
+        # metoda 4 budowanie modeli random forest dla kazdego podzbioru zbioru danych
+        # celem znalezienia podzbioru dajacego najlepsze wyniki
+        
+        # control_rfe <- rfeControl(functions=rfFuncs, method="cv", number=10)
+        # # run the RFE algorithm
+        # results <- rfe(target~.,data = dane,rfeControl=control_rfe)
+        # 
+        # plot(results, type=c("g", "o"))
+        # results$results
+        
+        #Istotnosc zmiennych mozna sprawdzic tez poprzez
+        #budowe modelu np RF a pozniej plot(VarImp(model))
+        
+        ### rozpoczecie sekcji zaleznej od inputow
         
         observe({
         
@@ -334,123 +449,12 @@ server<-function(input, output, session){
         rownames(dane_odp_correct)<-"Your answer"
         output$dane_odp<-renderDT(dane_odp_correct,options = list(scrollX=T))
     
-    #pomieszanie danych
-    set.seed(667)
-    dane<-dane[sample(nrow(dane)),]
-    
-    #info o zaleznosci zmiennych
-    
-    text<-"The following shows how significant the individual variables 
-have on the variable target."
-    
-    output$info_istotnosc<-renderText(text)
 
-    ### sprawdzenie korelacji metoda Spearmana ###
     
-    dane1<-dummyVars(target~.,dane)
-    dane_m<-predict(dane1,newdata=dane)
-    y<-as.numeric(as.character(dane$target))
-    s<-data.frame(dane_m)
-    s$target<-y
-    str(s)
-    
-    #install.packages("reshape2")
-    library(reshape2)
-    
-    c<-abs(cor(s))
-    
-    melted_cormat <- melt(c)
-    wykres_kor<-ggplot(melted_cormat)+
-      geom_tile(aes(x=Var1, y=Var2, fill=value), color = "white")+
-      scale_fill_gradient2(low = "white", high = "red",
-                           limit = c(0,1), space = "Lab",
-                           name="Pearson\nCorrelation") +
-      labs(x="",y="")+
-      theme_minimal()+
-      theme(axis.text.x = element_text(angle = 90, vjust = 1,
-                                       size = 9, hjust = 1))+
-      coord_fixed()
-    
-    output$wykres_kor<-renderPlot(wykres_kor)
-    
-    ### sposob nr2 korelacja - tabelka ###
-    
-    kor_num<- t(data.frame(abs(cor(s, s$target))))
-    rownames(kor_num)<-"coefficient"
-    
-    output$tabela_kor<-renderDT(kor_num, options=list(scrollX=T))
-    
-    ### sposob 3 test chi kwadrat dla danych kategorycznych
-    # bez zmiany na numeryczne
-    
-    #poazanie zmiennych jakosciowych
-    sapply(dane, function(x) is.factor(x))
-    i<-as.vector(sapply(dane, function(x) is.factor(x)))
-    i<-colnames(dane[,which(i==T)])
-    i<-i[-which(i=="target")]
-    i
-    
-    #zastosowanie testu chi-kwadrat dla kazdej zmiennej celem
-    #obliczenia jej wplywu na zmienna target
-    
-    chi1<-chisq.test(table(dane[,c("sex","target")]))$p.value
-    chi2<-chisq.test(table(dane[,c("cp","target")]))$p.value
-    chi3<-chisq.test(table(dane[,c("fbs","target")]))$p.value
-    chi4<-chisq.test(table(dane[,c("restecg","target")]))$p.value
-    chi5<-chisq.test(table(dane[,c("exang","target")]))$p.value
-    chi6<-chisq.test(table(dane[,c("slope","target")]))$p.value
-    chi7<-chisq.test(table(dane[,c("ca","target")]))$p.value
-    chi8<-chisq.test(table(dane[,c("thal","target")]))$p.value
-    
-    wek_chi<-c(chi1,chi2,chi3,chi4,chi5,chi6,chi7,chi8)
-    wek_chi
-  
-    chi_table<-data.frame("p.value"=wek_chi)
-    rownames(chi_table)<-i
-    chi_table<-t(chi_table)
-    chi_table
-    
-    output$tabela_chi<-renderDT(chi_table, options = list(scrollX=T))
-    
-    
-    ### sprawdzenie istotnosci zmiennych modelem LVQ ###
-    control_lvp <- trainControl(method="repeatedcv", number=10, repeats=3)
-    
-    ist_lvq <- train(target~., data=dane, 
-                   method="lvq", preProcess="scale",
-                   trControl=control_lvp)
-    
-    importance_lvq <- varImp(ist_lvq, scale=FALSE)
-    
-    output$wykres_lvq<-renderPlot(plot(importance_lvq))
-    
-    ### sprawdzenie istotnosci zmiennych modelem drzewa decyzyjnego ###
-    
-    ist_tree<-train(target~., data=dane,
-                    method = "ctree2", trControl = control_lvp)
-    
-    importance_tree<-varImp(ist_tree, scale=F)
-    
-    output$wykres_ctree2<-renderPlot(plot(importance_tree))
-    
-    # metoda 4 budowanie modeli random forest dla kazdego podzbioru zbioru danych
-    # celem znalezienia podzbioru dajacego najlepsze wyniki
-    
-    # control_rfe <- rfeControl(functions=rfFuncs, method="cv", number=10)
-    # # run the RFE algorithm
-    # results <- rfe(target~.,data = dane,rfeControl=control_rfe)
-    # 
-    # plot(results, type=c("g", "o"))
-    # results$results
-    
-    #Istotnosc zmiennych mozna sprawdzic tez poprzez
-    #budowe modelu np RF a pozniej plot(VarImp(model))
-    
-    
-    ### BUDOWANIE MODELOW ###
+    ### BUDOWANIE MODELI ###
     
     ## podzial danych one hot encoding
-    #dla modeli glm i knn
+    # dla modeli glm i knn
     
     #rezygnacja ze zmiennej fbs 
     #z powodu na mala istotnosc zmiennej
@@ -569,8 +573,8 @@ have on the variable target."
         output$dopasowanie_test<-renderText(paste("Accuracy on test dataset:",
                                                   round(accuracy_test*100,2),"%"))
         
-         #trzeba zrobic wektory z kolorami i ksztaltami
-         #aby moc zrobic manulanie legende
+         # wykres dopasowania modelu
+        
          cols<-c("c1"="black", "c2"="red")
          shapes<-c("s1"=3, "s2"=4)
          wykres_dop<-ggplot(wyniki,aes(x=seq(length(Rzeczywista))))+
@@ -606,13 +610,9 @@ have on the variable target."
       }
     
     else
-      output$wybor<-renderText({paste("Please choose model again")})
+      output$wybor<-renderText("Please choose model again")
     
-    
-    
-
-    
-  })
+  }) #zamyka observe
   
 }
 
