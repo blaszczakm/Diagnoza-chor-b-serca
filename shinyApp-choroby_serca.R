@@ -147,7 +147,7 @@ ui<-dashboardPage(header, menu, body)
 
 server<-function(input, output, session){
   
-  dane<-read.csv("https://raw.githubusercontent.com/blaszczakm/Diagnoza-chor-b-serca/master/heart.csv", sep = ",")
+  dane<-read.csv("https://raw.githubusercontent.com/blaszczakm/Machine_learning-choroby_serca/master/heart.csv", sep = ",")
   
   info<-"Author: Marek Błaszczak"
   output$about<-renderText(paste(
